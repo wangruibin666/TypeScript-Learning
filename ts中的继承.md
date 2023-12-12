@@ -501,5 +501,174 @@ super只能出现在子类【派生类】中，使用场景：
 
       同时父类方法不能是private 
 
-##### 3.TS继承底层JS源码
+##### 3.手写TS继承底层JS源码
+
+###### （1)子类继承父类的静态属性和方法
+
+```javascript
+var extendStatics = function (Son, Parent) {
+
+  // 自有属性 还会查找__proto__指向的对象空间[原型链上一级]中自有属性，这里用hasOwnProperty避免
+  function getStaticExtendsWithForIn (Son, Parent) {
+    for (let key in Parent) {
+      // 要求返回true的条件是本构造函数的自有属性 不会查找__proto__指向的对象空间中自有属性
+      if (Object.prototype.hasOwnProperty.call(Parent, key)) {
+        //子类继承父类的静态属性和静态方法
+        Son[key] = Parent[key]
+      }
+    }
+  }
+
+  // Object.keys(Parent)返回Parent类中的自有属性
+  function getStaticExtendsWithObjectkeys (Son, Parent) {
+    Object.keys(Parent).forEach((key) => {
+      Son[key] = Parent[key]
+    })
+  }
+
+  // 前面俩种子类被赋值父类的静态属性和方法，会浪费内存空间，这里改变子类的原型链指向
+  function getStaticExtendsWithProto (Son, Parent) {
+    Son.__proto__ = Parent;
+  }
+  return function (Son, Parent) {
+    // 优雅降级，适配浏览器
+    let MyextendStatics = Object.setPrototypeOf || getStaticExtendsWithForIn || getStaticExtendsWithObjectkeys || getStaticExtendsWithProto
+    return MyextendStatics(Son, Parent)
+  }
+  return MyextendStatics
+}
+```
+
+###### （2）子类继承父类其他属性和方法(实例对象的属性和方法)
+
+相关寄生组合式继承: 
+
+[深度掌握TS继承(上)]: https://blog.csdn.net/w1099690237/article/details/134902588
+
+```javascript
+var extendInstance = function (Son, Parent) {
+    // 这里就是前文提到的寄生组合式继承
+    function Middle () {
+      this.constructor = Son;
+    }
+    if (Parent) {//如果不为空 如果父类存在
+      Middle.prototype = Parent.prototype;
+      Son.prototype = new Middle()
+    } else {// 如果父类不存在
+      Son.prototype = Object.create(null)
+    }
+ }
+```
+
+###### （3）最终实现
+
+```javascript
+var __extends = (function () {
+  var extendStatics = function (Son, Parent) {
+    let myextendStatics = Object.setPrototypeOf ||
+      function (Son, Parent) { Son.__proto__ = Parent; } ||
+      function (Son, Parent) {
+        for (var key in Parent)
+          if (Object.prototype.hasOwnProperty.call(Parent, key))
+            Son[key] = Parent[key];
+      };
+    return myextendStatics(Son, Parent);
+  };
+  return function (Son, Parent) {
+    if (typeof Parent !== "function" && Parent !== null)
+      throw new TypeError("Class extends value " + String(Parent) + " is not a constructor or null");
+    extendStatics(Son, Parent);
+    function Middle () {
+      this.constructor = Son;
+    }
+    // ==========================
+    Son.prototype =  Parent === null ? Object.create(null) : (Middle.prototype = Parent.prototype, new Middle())
+    // ==========================
+    // 上面ts编译后的代码跟下面写法不同，作用相同
+    // if (Parent) {//如果不为空 如果父类存在
+    //   Middle.prototype = Parent.prototype;
+    //   Son.prototype = new Middle()
+    // } else {// 如果父类不存在
+    //   Son.prototype = Object.create(null)
+    // }
+  };
+})()
+```
+
+###### （4）示例
+
+[深度掌握TS继承(中)]: https://blog.csdn.net/w1099690237/article/details/134902741
+
+```javascript
+var Vechile = (function () {
+  function Vechile (brand_, vechileNo_, days_, deposit_) {
+    this.brand = brand_;
+    this.vechileNo = vechileNo_;
+    this.days = days_;
+    this.deposit = deposit_;
+  }
+  // 计算租赁车的价格 ( calculateRent)
+  Vechile.prototype.calculateRent = function () {
+    console.log("calculateRent来自Vechile=>this.brand:", this.brand);
+    console.log(this.brand + " 车牌号为:" + this.vechileNo + "开始被租");
+    return 0;
+  };
+  //支付押金的方法( payDesposit)
+  Vechile.prototype.payDesposit = function () {
+    console.log(this.brand + " 车牌号为:" + this.vechileNo + " 支付了:" + this.deposit);
+  };
+  //  安全检测方法（safeShow)
+  Vechile.prototype.safeShow = function () {
+    console.log("车规则....");
+    console.log(this.brand + " 车牌号为:" + this.vechileNo + " 违规了:");
+  };
+  Vechile.count = 300;
+  return Vechile;
+}())
+
+var Car = (function (_super) {
+  __extends(Car, _super);
+  function Car (brand_, vechileNo_, days_, deposit_, type_) {
+    var _this =
+      //  _super.call(this,brand_, vechileNo_, days_, total_, deposit_)
+      _super.call(this, brand_, vechileNo_, days_, deposit_) || this;
+      // 这里的 [|| this]为了确保在子类构造函数中正确调用父类构造函数，因为在一些特殊情况下，super() 调用可能会导致一些问题，特别是在涉及到 this 上下文的情况下
+    _this.type = type_;
+    return _this;
+  }
+  // 根据车的型号来获取租用一天该型号车的租金
+  Car.prototype.getPriceByType = function () {
+    var rentMoneyByDay = 0; //每天的租金
+    if (this.type === "普拉多巡洋舰") {
+      rentMoneyByDay = 800;
+    }
+    else if (this.type === "凯美瑞旗舰版") {
+      rentMoneyByDay = 400;
+    }
+    else if (this.type === "威驰智行版") {
+      rentMoneyByDay = 200;
+    }
+    return rentMoneyByDay;
+  };
+  Car.prototype.calculateRent = function () {
+    _super.prototype.calculateRent.call(this)
+    return this.days * this.getPriceByType();
+  }
+  return Car;
+}(Vechile))
+
+var car = new Car("普拉多", "京3A556", 3, 100000, "凯美瑞旗舰版");
+console.log(Car.count); // 检查继承父类的静态属性方法
+console.log(car.calculateRent()); // 检查继承父类的其他属性方法
+
+// 感兴趣的可以将前文中的ts代码，编译成js代码对照一下~
+
+/**
+打印：
+300
+calculateRent来自Vechile=>this.brand: 普拉多
+普拉多 车牌号为:京3A556开始被租
+1200
+*/
+```
 
